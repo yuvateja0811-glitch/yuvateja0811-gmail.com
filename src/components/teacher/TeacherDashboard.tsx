@@ -14,11 +14,13 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  Edit3,
   Filter,
   GraduationCap,
   History,
   Info,
   Layers,
+  RefreshCw,
   Save,
   Search,
   Users,
@@ -27,7 +29,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { OFFICIAL_SUBJECTS } from '../../data/subjects';
 import { db } from '../../firebase/config';
-import { saveAttendanceBatch } from '../../services/portalService';
+import { saveAttendanceBatch, updateIndividualAttendance } from '../../services/portalService';
 import {
   AttendanceRecord,
   AttendanceStatus,
@@ -159,6 +161,28 @@ export const TeacherDashboard: React.FC = () => {
       ...prev,
       [studentId]: prev[studentId] === 'Present' ? 'Absent' : 'Present',
     }));
+  };
+
+  // Quick status toggle for individual record in History
+  const handleToggleHistoryStatus = async (rec: AttendanceRecord) => {
+    const nextStatus: AttendanceStatus = rec.status === 'Present' ? 'Absent' : 'Present';
+    try {
+      await updateIndividualAttendance(rec.recordId, nextStatus, userProfile?.fullName || 'Faculty');
+      setSaveSuccess(`Updated ${rec.studentId} (${rec.subjectName}) status to ${nextStatus}!`);
+      setTimeout(() => setSaveSuccess(null), 3500);
+    } catch (err: any) {
+      alert('Error updating attendance record: ' + err.message);
+    }
+  };
+
+  // Load session into editor
+  const handleLoadSessionToEditor = (date: string, subjectId: string) => {
+    setSelectedDate(date);
+    setSelectedSubjectId(subjectId);
+    setViewMode('mark');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setSaveSuccess(`Loaded session for ${date} into the attendance editor! You can now adjust and re-save.`);
+    setTimeout(() => setSaveSuccess(null), 3500);
   };
 
   // Save Attendance to Firestore
@@ -489,9 +513,32 @@ export const TeacherDashboard: React.FC = () => {
       {/* VIEW MODE: HISTORY */}
       {viewMode === 'history' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-4 p-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-white">Attendance Archive</h3>
-            <span className="text-xs text-slate-400">{historyRecords.length} total entries</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <History className="w-5 h-5 text-blue-400" />
+                Attendance Archive & Modification Ledger
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Past recorded sessions. Teachers can edit records individually or re-open full sessions.
+              </p>
+            </div>
+            <span className="text-xs font-mono text-slate-400 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 self-start sm:self-auto">
+              {historyRecords.length} total student entries
+            </span>
+          </div>
+
+          {/* Teacher Information Update Help Box */}
+          <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-200 flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+            <div className="leading-relaxed">
+              <strong className="text-white">How Teachers Can Update Information:</strong>
+              <ul className="list-disc list-inside mt-1 space-y-0.5 text-slate-300">
+                <li><strong>Quick Single-Student Correction:</strong> Click on any student's <span className="text-emerald-400 font-semibold">Present</span> or <span className="text-red-400 font-semibold">Absent</span> badge below to toggle and save immediately to Firestore.</li>
+                <li><strong>Re-mark or Edit Full Session:</strong> Click the <strong className="text-blue-300">Edit Session</strong> button to load that date and subject back into the attendance register, modify any number of students, and re-save.</li>
+                <li><strong>Study Materials:</strong> Go to the <em>Study Materials & Syllabus</em> tab to add new Drive folders, lecture PDFs, or external links using the <em>+ Add New Study Material</em> button.</li>
+              </ul>
+            </div>
           </div>
 
           {historyRecords.length === 0 ? (
@@ -507,8 +554,9 @@ export const TeacherDashboard: React.FC = () => {
                     <th className="py-3 px-4">Subject</th>
                     <th className="py-3 px-4">Roll No</th>
                     <th className="py-3 px-4">Student Name</th>
-                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Status (Click to Toggle)</th>
                     <th className="py-3 px-4">Marked By</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -519,15 +567,31 @@ export const TeacherDashboard: React.FC = () => {
                       <td className="py-2.5 px-4 font-bold text-blue-300">{rec.studentId}</td>
                       <td className="py-2.5 px-4 font-sans text-slate-300">{rec.studentName}</td>
                       <td className="py-2.5 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                          rec.status === 'Present'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                        }`}>
-                          {rec.status}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleHistoryStatus(rec)}
+                          title="Click to toggle status in Firestore"
+                          className={`px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center gap-1 ${
+                            rec.status === 'Present'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                              : 'bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30'
+                          }`}
+                        >
+                          <RefreshCw className="w-2.5 h-2.5" />
+                          <span>{rec.status}</span>
+                        </button>
                       </td>
                       <td className="py-2.5 px-4 font-sans text-slate-400 text-[11px]">{rec.markedByName}</td>
+                      <td className="py-2.5 px-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadSessionToEditor(rec.date, rec.subjectId)}
+                          className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[11px] font-sans font-medium transition-colors flex items-center gap-1 ml-auto"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Edit Session</span>
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

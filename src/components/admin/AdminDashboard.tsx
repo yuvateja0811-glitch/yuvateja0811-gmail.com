@@ -17,6 +17,7 @@ import {
   Layers,
   RefreshCw,
   Search,
+  Edit3,
   ShieldAlert,
   ShieldCheck,
   Upload,
@@ -31,7 +32,10 @@ import { db } from '../../firebase/config';
 import {
   approveEnrollmentRequest,
   importRosterList,
-  rejectEnrollmentRequest
+  rejectEnrollmentRequest,
+  updateIndividualAttendance,
+  updateRosterStudent,
+  updateUserAccount
 } from '../../services/portalService';
 import {
   AttendanceRecord,
@@ -75,9 +79,55 @@ export const AdminDashboard: React.FC = () => {
   // Status Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Edit Student Modal State
+  const [editingStudent, setEditingStudent] = useState<RosterStudent | null>(null);
+  const [editStudentName, setEditStudentName] = useState<string>('');
+  const [editStudentSection, setEditStudentSection] = useState<string>('CSE-2');
+  const [editSaving, setEditSaving] = useState<boolean>(false);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleStartEditStudent = (student: RosterStudent) => {
+    setEditingStudent(student);
+    setEditStudentName(student.name || '');
+    setEditStudentSection(student.section || 'CSE-2');
+  };
+
+  const handleSaveStudentEdit = async () => {
+    if (!editingStudent) return;
+    setEditSaving(true);
+    try {
+      await updateRosterStudent(editingStudent.studentId, editStudentName, editStudentSection);
+      showToast(`Updated student ${editingStudent.studentId} information!`);
+      setEditingStudent(null);
+    } catch (err: any) {
+      alert('Error updating student: ' + err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleToggleAttendance = async (rec: AttendanceRecord) => {
+    const nextStatus = rec.status === 'Present' ? 'Absent' : 'Present';
+    try {
+      await updateIndividualAttendance(rec.recordId, nextStatus, userProfile?.fullName || 'Admin');
+      showToast(`Updated ${rec.studentId} (${rec.subjectName}) to ${nextStatus}!`);
+    } catch (err: any) {
+      alert('Error updating attendance: ' + err.message);
+    }
+  };
+
+  const handleToggleUserStatus = async (user: UserProfile) => {
+    const nextStatus = user.status === 'approved' ? 'rejected' : 'approved';
+    try {
+      await updateUserAccount(user.uid, { status: nextStatus });
+      showToast(`Updated status for ${user.fullName} to ${nextStatus.toUpperCase()}`);
+    } catch (err: any) {
+      alert('Error updating account: ' + err.message);
+    }
   };
 
   // 1. Real-time listener for Enrollment Requests
@@ -736,6 +786,7 @@ export const AdminDashboard: React.FC = () => {
                     <th className="py-3 px-4">Student Name</th>
                     <th className="py-3 px-4">Section</th>
                     <th className="py-3 px-4">Account Status</th>
+                    <th className="py-3 px-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -752,7 +803,7 @@ export const AdminDashboard: React.FC = () => {
                           student.name
                         ) : (
                           <span className="text-slate-500 italic text-xs font-normal">
-                            (Name unassigned – can be imported via CSV or claimed by student)
+                            (Name unassigned – click Edit to assign)
                           </span>
                         )}
                       </td>
@@ -770,6 +821,15 @@ export const AdminDashboard: React.FC = () => {
                             Unclaimed ID
                           </span>
                         )}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => handleStartEditStudent(student)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-300 hover:text-white border border-slate-700 text-xs font-sans font-semibold transition-colors flex items-center gap-1 ml-auto"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -828,13 +888,19 @@ export const AdminDashboard: React.FC = () => {
                       <td className="py-2.5 px-4 text-blue-300 font-bold">{record.studentId}</td>
                       <td className="py-2.5 px-4 font-sans text-slate-200">{record.studentName}</td>
                       <td className="py-2.5 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                          record.status === 'Present'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                        }`}>
-                          {record.status}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAttendance(record)}
+                          title="Click to toggle Present / Absent status in Firestore"
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm hover:scale-105 active:scale-95 ${
+                            record.status === 'Present'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                              : 'bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30'
+                          }`}
+                        >
+                          <span>{record.status}</span>
+                          <Edit3 className="w-2.5 h-2.5 opacity-60" />
+                        </button>
                       </td>
                       <td className="py-2.5 px-4 font-sans text-slate-400 text-[11px]">{record.markedByName}</td>
                     </tr>
@@ -863,6 +929,7 @@ export const AdminDashboard: React.FC = () => {
                   <th className="py-3 px-4">Student ID</th>
                   <th className="py-3 px-4">Department</th>
                   <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -886,9 +953,23 @@ export const AdminDashboard: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 text-slate-300">{u.department}</td>
                     <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                        u.status === 'approved'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                      }`}>
                         {u.status}
                       </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      {u.role !== 'admin' && (
+                        <button
+                          onClick={() => handleToggleUserStatus(u)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 hover:text-white border border-slate-700 transition-colors"
+                        >
+                          {u.status === 'approved' ? 'Suspend' : 'Reinstate'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1055,6 +1136,75 @@ export const AdminDashboard: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
               >
                 {importLoading ? 'Processing...' : 'Apply & Save Roster'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Edit Student Information */}
+      {editingStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-blue-400">
+                <Edit3 className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white">Edit Student Information</h3>
+              </div>
+              <button
+                onClick={() => setEditingStudent(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
+              <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">Official Roll Number</span>
+              <div className="text-base font-mono font-bold text-blue-300">{editingStudent.studentId}</div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Student Full Name
+                </label>
+                <input
+                  type="text"
+                  value={editStudentName}
+                  onChange={(e) => setEditStudentName(e.target.value)}
+                  placeholder="Enter full legal name"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Section
+                </label>
+                <input
+                  type="text"
+                  value={editStudentSection}
+                  onChange={(e) => setEditStudentSection(e.target.value)}
+                  placeholder="CSE-2"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setEditingStudent(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={editSaving}
+                onClick={handleSaveStudentEdit}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5"
+              >
+                {editSaving ? 'Saving...' : 'Save to Firestore'}
               </button>
             </div>
           </div>

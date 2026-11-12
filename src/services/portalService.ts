@@ -124,8 +124,12 @@ export async function setupFirstTimeAdmin(
 
     await batch.commit();
 
-    // Auto-seed roster in background
-    await seedOfficialRosterIfEmpty();
+    // Auto-seed roster in background safely
+    try {
+      await seedOfficialRosterIfEmpty();
+    } catch (rosterErr) {
+      console.warn('Roster auto-seeding will complete upon next admin access:', rosterErr);
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, configPath);
   }
@@ -388,3 +392,80 @@ export async function importRosterList(
     return 0;
   }
 }
+
+/**
+ * Updates a single student's details in the official roster (Admin only)
+ */
+export async function updateRosterStudent(
+  studentId: string,
+  name: string,
+  section: string
+): Promise<void> {
+  const path = 'roster';
+  try {
+    const docRef = doc(db, path, studentId);
+    await setDoc(docRef, { name: name.trim(), section: section.trim() }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Updates an individual student attendance record (Teacher or Admin)
+ */
+export async function updateIndividualAttendance(
+  recordId: string,
+  newStatus: AttendanceStatus,
+  editorName: string
+): Promise<void> {
+  const path = 'attendance';
+  try {
+    const docRef = doc(db, path, recordId);
+    await setDoc(docRef, { status: newStatus, markedByName: editorName, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Updates user role and status (Admin only)
+ */
+export async function updateUserAccount(
+  uid: string,
+  updates: Partial<UserProfile>
+): Promise<void> {
+  const path = 'users';
+  try {
+    const docRef = doc(db, path, uid);
+    await setDoc(docRef, { ...updates, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Saves or updates a resource item (Teacher or Admin)
+ */
+export async function saveResourceItem(item: ResourceItem): Promise<void> {
+  const path = 'resources';
+  try {
+    const docRef = doc(db, path, item.id);
+    await setDoc(docRef, item, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+/**
+ * Deletes a resource item (Teacher or Admin)
+ */
+export async function deleteResourceItem(id: string): Promise<void> {
+  const path = 'resources';
+  try {
+    const { deleteDoc } = await import('firebase/firestore');
+    await deleteDoc(doc(db, path, id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+

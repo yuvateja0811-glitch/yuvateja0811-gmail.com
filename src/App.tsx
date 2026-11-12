@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { AuthModal } from './components/auth/AuthModal';
+import { DownloadInstallModal } from './components/pwa/DownloadInstallModal';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { TeacherDashboard } from './components/teacher/TeacherDashboard';
 import { StudentDashboard } from './components/student/StudentDashboard';
@@ -23,6 +24,7 @@ function MainContent() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'resources' | 'timetable' | 'roster'>('dashboard');
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [authInitialRole, setAuthInitialRole] = useState<UserRole>('student');
+  const [downloadModalOpen, setDownloadModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     // Run connection test on boot
@@ -54,6 +56,7 @@ function MainContent() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenAuth={() => openAuthWithRole('student')}
+        onOpenDownloadGuide={() => setDownloadModalOpen(true)}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12">
@@ -115,6 +118,7 @@ function MainContent() {
             <PublicLanding
               onOpenAuth={(role) => openAuthWithRole(role)}
               onNavigateTab={(tab) => setActiveTab(tab)}
+              onOpenDownloadGuide={() => setDownloadModalOpen(true)}
             />
           )
         )}
@@ -143,6 +147,12 @@ function MainContent() {
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         initialRole={authInitialRole}
+      />
+
+      {/* Download & Installation Modal */}
+      <DownloadInstallModal
+        isOpen={downloadModalOpen}
+        onClose={() => setDownloadModalOpen(false)}
       />
     </div>
   );

@@ -15,7 +15,7 @@ service cloud.firestore {
     function isPortalAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == 'yuvateja0811@gmail.com'
+        ('email' in request.auth.token && request.auth.token.email == 'yuvateja0811@gmail.com')
       );
     }
 
@@ -46,7 +46,7 @@ service cloud.firestore {
     // Admin Registry
     match /admins/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isPortalAdmin());
-      allow create: if isPortalAdmin() || (!exists(/databases/$(database)/documents/system/config) && request.auth.uid == uid);
+      allow create: if isPortalAdmin() || (isSignedIn() && request.auth.uid == uid);
       allow update, delete: if isPortalAdmin();
     }
 
@@ -83,7 +83,7 @@ service cloud.firestore {
     // Official Student Roster (93 students of GVP CSE-2)
     match /roster/{studentId} {
       allow read: if true;
-      allow write: if isPortalAdmin();
+      allow write: if isPortalAdmin() || !exists(/databases/$(database)/documents/system/config);
     }
 
     // Attendance Records
@@ -99,6 +99,12 @@ service cloud.firestore {
     match /resources/{id} {
       allow read: if true;
       allow write: if isPortalAdmin() || isApprovedTeacher();
+    }
+
+    // Mid-1 Examination Timetable
+    match /timetable/{id} {
+      allow read: if true;
+      allow write: if isPortalAdmin();
     }
   }
 }

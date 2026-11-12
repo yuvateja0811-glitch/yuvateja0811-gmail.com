@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   CheckCircle2,
@@ -10,24 +10,94 @@ import {
   FileText,
   FolderArchive,
   Layers,
+  Plus,
   Search,
   Sparkles,
-  Terminal
+  Terminal,
+  Trash2,
+  X
 } from 'lucide-react';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { useAuth } from '../../context/AuthContext';
 import { OFFICIAL_RESOURCES } from '../../data/defaultResources';
 import { OFFICIAL_SUBJECTS } from '../../data/subjects';
+import { db } from '../../firebase/config';
+import { deleteResourceItem, saveResourceItem } from '../../services/portalService';
+import { ResourceItem } from '../../types';
 
 export const ResourcesSection: React.FC = () => {
-  const [selectedSubject, setSelectedSubject] = useState<string>('all');
-  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const { userRole, currentUser } = useAuth();
+  const isFacultyOrAdmin = userRole === 'admin' || userRole === 'teacher';
 
-  // Active Document Viewer for C Programming PDFs
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [activePdfDoc, setActivePdfDoc] = useState<'lectureNotes' | 'tutorialSheets' | null>(null);
 
-  const copyToClipboard = (url: string) => {
-    navigator.clipboard.writeText(url);
-    setCopiedLink(url);
+  // Firestore resources
+  const [customResources, setCustomResources] = useState<ResourceItem[]>([]);
+  const [showAddModal, setShowAddModal] = useState<boolean>(false);
+
+  // Form fields for adding material
+  const [title, setTitle] = useState('');
+  const [subject, setSubject] = useState(OFFICIAL_SUBJECTS[0].name);
+  const [type, setType] = useState<'drive_folder' | 'web_link' | 'pdf_document'>('drive_folder');
+  const [url, setUrl] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Real-time listener for custom resources
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'resources'), (snap) => {
+      const list: ResourceItem[] = [];
+      snap.forEach((doc) => {
+        list.push(doc.data() as ResourceItem);
+      });
+      setCustomResources(list);
+    }, (err) => {
+      console.warn('Resources listener notice:', err.message);
+    });
+
+    return () => unsub();
+  }, []);
+
+  const copyToClipboard = (linkUrl: string) => {
+    navigator.clipboard.writeText(linkUrl);
+    setCopiedLink(linkUrl);
     setTimeout(() => setCopiedLink(null), 2500);
+  };
+
+  const handleSaveResource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !url.trim()) return;
+    setSaving(true);
+    try {
+      const newItem: ResourceItem = {
+        id: `res_${Date.now()}`,
+        title: title.trim(),
+        subject,
+        type,
+        url: url.trim(),
+        description: description.trim(),
+        isOfficial: false,
+      };
+      await saveResourceItem(newItem);
+      setShowAddModal(false);
+      setTitle('');
+      setUrl('');
+      setDescription('');
+    } catch (err: any) {
+      alert('Error saving material: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to remove this study resource?')) return;
+    try {
+      await deleteResourceItem(id);
+    } catch (err: any) {
+      alert('Error deleting material: ' + err.message);
+    }
   };
 
   return (
@@ -51,6 +121,16 @@ export const ResourcesSection: React.FC = () => {
               Access official course materials, lecture notes, laboratory guides, and question banks provided by faculty.
             </p>
           </div>
+
+          {isFacultyOrAdmin && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add New Study Material</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -231,11 +311,62 @@ export const ResourcesSection: React.FC = () => {
         </div>
       </div>
 
+      {/* Additional Custom Resources (Added by Faculty or Admin) */}
+      {customResources.length > 0 && (
+        <div className="space-y-4 pt-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-blue-400" />
+              <span>Faculty Added Materials ({customResources.length})</span>
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {customResources.map((item) => (
+              <div
+                key={item.id}
+                className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-blue-500/40 transition-all shadow-md flex flex-col justify-between space-y-3"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                      {item.subject}
+                    </span>
+                    {isFacultyOrAdmin && (
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        title="Delete resource"
+                        className="p-1 rounded text-slate-500 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <h4 className="font-bold text-white text-sm mt-2">{item.title}</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">{item.description}</p>
+                </div>
+
+                <div className="pt-2">
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2 px-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-semibold text-xs border border-blue-500/30 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>Open Material</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* MODAL / VIEWER for C Programming Documents */}
       {activePdfDoc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
-            {/* Modal Header */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
             <div className="p-5 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
@@ -258,7 +389,6 @@ export const ResourcesSection: React.FC = () => {
               </button>
             </div>
 
-            {/* Document Content / Study Guide */}
             <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-300">
               {activePdfDoc === 'lectureNotes' ? (
                 <div className="space-y-4">
@@ -362,31 +492,6 @@ int main() {
                             <td className="py-2 px-3 text-white">&lt;&lt; &gt;&gt;</td>
                             <td className="py-2 px-3 text-slate-400">Left to Right</td>
                           </tr>
-                          <tr>
-                            <td className="py-2 px-3 text-amber-400">6 (Relational)</td>
-                            <td className="py-2 px-3 text-white">&lt; &lt;= &gt; &gt;=</td>
-                            <td className="py-2 px-3 text-slate-400">Left to Right</td>
-                          </tr>
-                          <tr>
-                            <td className="py-2 px-3 text-amber-400">7 (Equality)</td>
-                            <td className="py-2 px-3 text-white">== !=</td>
-                            <td className="py-2 px-3 text-slate-400">Left to Right</td>
-                          </tr>
-                          <tr>
-                            <td className="py-2 px-3 text-amber-400">8 (Bitwise AND)</td>
-                            <td className="py-2 px-3 text-white">&</td>
-                            <td className="py-2 px-3 text-slate-400">Left to Right</td>
-                          </tr>
-                          <tr>
-                            <td className="py-2 px-3 text-amber-400">9 (Bitwise XOR)</td>
-                            <td className="py-2 px-3 text-white">^</td>
-                            <td className="py-2 px-3 text-slate-400">Left to Right</td>
-                          </tr>
-                          <tr>
-                            <td className="py-2 px-3 text-amber-400">10 (Bitwise OR)</td>
-                            <td className="py-2 px-3 text-white">|</td>
-                            <td className="py-2 px-3 text-slate-400">Left to Right</td>
-                          </tr>
                         </tbody>
                       </table>
                     </div>
@@ -395,7 +500,6 @@ int main() {
               )}
             </div>
 
-            {/* Modal Footer */}
             <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
               <span className="text-[11px] text-slate-400">Department of Computer Science & Engineering</span>
               <button
@@ -405,6 +509,96 @@ int main() {
                 Close Viewer
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Add New Resource Item */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-blue-400">
+                <Plus className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white">Add Study Material / Link</h3>
+              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveResource} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Subject</label>
+                <select
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {OFFICIAL_SUBJECTS.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.name} ({s.code})
+                    </option>
+                  ))}
+                  <option value="General CSE-2 Academic Notice">General CSE-2 Academic Notice</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Title / Topic Name</label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Unit 3 Trees & Graphs Practice Problems"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Resource URL / Drive Link</label>
+                <input
+                  type="url"
+                  required
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://drive.google.com/..."
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Short Description</label>
+                <textarea
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Briefly describe what this resource covers..."
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-md shadow-blue-600/20"
+                >
+                  {saving ? 'Saving...' : 'Publish to Portal'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

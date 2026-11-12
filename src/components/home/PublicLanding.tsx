@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  ArrowDownToLine,
   ArrowRight,
   BookOpen,
   Calendar,
@@ -19,9 +20,10 @@ import { UserRole } from '../../types';
 interface PublicLandingProps {
   onOpenAuth: (role: UserRole) => void;
   onNavigateTab: (tab: 'resources' | 'timetable') => void;
+  onOpenDownloadGuide: () => void;
 }
 
-export const PublicLanding: React.FC<PublicLandingProps> = ({ onOpenAuth, onNavigateTab }) => {
+export const PublicLanding: React.FC<PublicLandingProps> = ({ onOpenAuth, onNavigateTab, onOpenDownloadGuide }) => {
   const { isSetupCompleted } = useAuth();
 
   return (
@@ -69,6 +71,14 @@ export const PublicLanding: React.FC<PublicLandingProps> = ({ onOpenAuth, onNavi
             >
               <ShieldCheck className="w-4 h-4 text-amber-400" />
               <span>{isSetupCompleted ? 'Admin Login' : 'First-Time Admin Setup'}</span>
+            </button>
+
+            <button
+              onClick={onOpenDownloadGuide}
+              className="px-5 py-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-semibold text-sm border border-emerald-500/30 transition-colors flex items-center gap-2"
+            >
+              <ArrowDownToLine className="w-4 h-4 text-emerald-400" />
+              <span>Download / Install App</span>
             </button>
           </div>
         </div>

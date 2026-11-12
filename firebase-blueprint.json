@@ -100,6 +100,21 @@
         "description": { "type": "string", "maxLength": 500, "description": "Description or summary" }
       },
       "required": ["id", "title", "subject", "type"]
+    },
+    "TimetableItem": {
+      "title": "Timetable Item",
+      "description": "Mid-1 Exam schedule and syllabus overview",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100, "description": "Exam ID" },
+        "date": { "type": "string", "maxLength": 20, "description": "Exam date YYYY-MM-DD" },
+        "day": { "type": "string", "maxLength": 20, "description": "Day of week" },
+        "timeSlot": { "type": "string", "maxLength": 50, "description": "Time slot" },
+        "subject": { "type": "string", "maxLength": 100, "description": "Subject title" },
+        "courseCode": { "type": "string", "maxLength": 20, "description": "Course code" },
+        "venue": { "type": "string", "maxLength": 100, "description": "Exam hall" }
+      },
+      "required": ["id", "date", "timeSlot", "subject", "courseCode"]
     }
   },
   "firestore": {
@@ -130,6 +145,10 @@
     "/resources/{id}": {
       "schema": "ResourceItem",
       "description": "Course materials and resource links"
+    },
+    "/timetable/{id}": {
+      "schema": "TimetableItem",
+      "description": "Mid-1 Examination schedule items"
     }
   }
 }

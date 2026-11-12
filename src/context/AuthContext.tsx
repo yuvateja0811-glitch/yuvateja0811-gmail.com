@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
+  GoogleAuthProvider,
   User as FirebaseUser,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut
 } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
 import { isValidCse2Id, normalizeStudentId } from '../data/officialRoster';
 import { auth, db } from '../firebase/config';
 import {
@@ -17,6 +19,8 @@ import {
   submitTeacherEnrollment
 } from '../services/portalService';
 import { PortalConfig, UserProfile, UserRole } from '../types';
+
+export const ADMIN_PRIMARY_EMAIL = 'yuvateja0811@gmail.com';
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
@@ -29,6 +33,7 @@ interface AuthContextType {
   portalConfig: PortalConfig | null;
   isSetupCompleted: boolean;
   login: (identifier: string, pass: string, requestedRole?: UserRole) => Promise<UserProfile>;
+  loginWithGoogle: (requestedRole?: UserRole, rollNo?: string, fullName?: string) => Promise<UserProfile>;
   registerStudent: (fullName: string, studentId: string, pass: string) => Promise<string>;
   registerTeacher: (fullName: string, email: string, dept: string, pass: string) => Promise<string>;
   executeAdminSetup: (fullName: string, email: string, pass: string) => Promise<void>;
@@ -37,6 +42,37 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function formatAuthError(error: any): string {
+  const code = error?.code || '';
+  const msg = error?.message || String(error);
+
+  if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
+    return "Email/Password sign-in is not yet enabled in this Firebase project. You can sign in immediately using 'Continue with Google' (already enabled), or enable Email/Password in your Firebase Console under Authentication > Sign-in method.";
+  }
+  if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+    return 'Incorrect credentials. Please verify your password, or switch to the Register tab if you haven\'t created an account yet.';
+  }
+  if (code === 'auth/user-not-found') {
+    return 'Account not found. Please click the Register tab to submit your enrollment request first.';
+  }
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Google Sign-In popup was closed before completing.';
+  }
+  if (code === 'auth/popup-blocked') {
+    return 'Sign-In popup was blocked by your browser. Please allow popups for this site.';
+  }
+  if (code === 'auth/too-many-requests') {
+    return 'Too many failed attempts. Access temporarily locked for security. Please try again in a few moments.';
+  }
+
+  // Handle JSON error from handleFirestoreError
+  if (typeof msg === 'string' && msg.trim().startsWith('{') && msg.includes('Missing or insufficient permissions')) {
+    return 'Access Denied: You do not currently possess approved permissions for this operation. Please ensure your enrollment has been approved by the Administrator.';
+  }
+
+  return msg;
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -69,26 +105,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentUser(user);
       if (user) {
         try {
+          const isOwner = (user.email || '').toLowerCase() === ADMIN_PRIMARY_EMAIL.toLowerCase();
+
+          // Check admin doc
+          const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+          if (isOwner || adminDoc.exists()) {
+            const adminData: UserProfile = {
+              uid: user.uid,
+              email: user.email || ADMIN_PRIMARY_EMAIL,
+              fullName: user.displayName || adminDoc.data()?.fullName || 'Portal Administrator',
+              role: 'admin',
+              department: 'CSE Administration',
+              status: 'approved',
+            };
+            setUserProfile(adminData);
+            setLoading(false);
+            return;
+          }
+
+          // Check standard user doc
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
             const data = userDoc.data() as UserProfile;
             setUserProfile(data);
           } else {
-            // Check if admin doc exists
-            const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-            if (adminDoc.exists()) {
-              const adminData: UserProfile = {
-                uid: user.uid,
-                email: user.email || '',
-                fullName: adminDoc.data()?.fullName || 'Portal Administrator',
-                role: 'admin',
-                department: 'Administration',
-                status: 'approved',
-              };
-              setUserProfile(adminData);
-            } else {
-              setUserProfile(null);
-            }
+            setUserProfile(null);
           }
         } catch (e) {
           console.error('Error fetching user profile:', e);
@@ -108,6 +149,105 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
     if (userDoc.exists()) {
       setUserProfile(userDoc.data() as UserProfile);
+    }
+  };
+
+  /**
+   * Google Sign-In with instant Owner recognition and Enrollment linking
+   */
+  const loginWithGoogle = async (
+    requestedRole: UserRole = 'student',
+    rollNo?: string,
+    fullName?: string
+  ): Promise<UserProfile> => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const cred = await signInWithPopup(auth, provider);
+      const user = cred.user;
+      const email = (user.email || '').toLowerCase();
+      const uid = user.uid;
+
+      // 1. Is this the authorized portal admin / owner?
+      if (email === ADMIN_PRIMARY_EMAIL.toLowerCase()) {
+        const adminProfile: UserProfile = {
+          uid,
+          email: user.email || ADMIN_PRIMARY_EMAIL,
+          fullName: user.displayName || 'Portal Administrator',
+          role: 'admin',
+          department: 'CSE Administration',
+          status: 'approved',
+        };
+
+        // Persist admin credentials in Firestore
+        await setDoc(doc(db, 'admins', uid), {
+          uid,
+          email: user.email,
+          fullName: user.displayName || 'Portal Administrator',
+          role: 'admin',
+          createdAt: new Date().toISOString(),
+        }, { merge: true });
+
+        await setDoc(doc(db, 'users', uid), adminProfile, { merge: true });
+
+        await setDoc(doc(db, 'system', 'config'), {
+          adminSetupCompleted: true,
+          adminEmail: user.email,
+          adminUid: uid,
+          department: 'Computer Science and Engineering',
+          section: 'CSE-2',
+          academicYear: '2026-2027',
+          semester: 'I Semester',
+          totalRosterCount: 93,
+        }, { merge: true });
+
+        // Auto-seed roster in background
+        seedOfficialRosterIfEmpty().catch(console.warn);
+
+        setUserProfile(adminProfile);
+        setIsSetupCompleted(true);
+        return adminProfile;
+      }
+
+      // 2. Check if user already exists
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists()) {
+        const existingProfile = userDoc.data() as UserProfile;
+        if (existingProfile.status === 'pending') {
+          await signOut(auth);
+          throw new Error('Account not approved. Your enrollment request is currently pending Admin approval.');
+        }
+        if (existingProfile.status === 'rejected') {
+          await signOut(auth);
+          throw new Error('Account rejected. Your enrollment request was declined by the administrator.');
+        }
+        setUserProfile(existingProfile);
+        return existingProfile;
+      }
+
+      // 3. New User registering via Google:
+      const nameToUse = fullName || user.displayName || 'Applicant';
+
+      if (requestedRole === 'student') {
+        if (!rollNo || !isValidCse2Id(rollNo)) {
+          await signOut(auth);
+          throw new Error('Please enter a valid CSE-2 roll number (26UECSE0122 - 26UECSE0214) to submit student enrollment with Google.');
+        }
+        const normalized = normalizeStudentId(rollNo);
+        await submitStudentEnrollment(uid, user.email || '', nameToUse, normalized);
+        await signOut(auth);
+        throw new Error(`Enrollment request submitted for ${nameToUse} (${normalized})! Status: Pending Admin Approval.`);
+      } else if (requestedRole === 'teacher') {
+        await submitTeacherEnrollment(uid, user.email || '', nameToUse, 'Computer Science & Engineering');
+        await signOut(auth);
+        throw new Error(`Teacher enrollment request submitted for ${nameToUse}! Status: Pending Admin Approval.`);
+      }
+
+      // If generic admin login attempted with non-admin Google account
+      await signOut(auth);
+      throw new Error(`Access Denied: The Google account "${email}" does not possess administrator privileges for GVP CSE-2.`);
+    } catch (err: any) {
+      throw new Error(formatAuthError(err));
     }
   };
 
@@ -174,17 +314,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUserProfile(profile);
       return profile;
     } catch (error: any) {
-      const code = error.code || '';
-      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-        throw new Error('Incorrect password. Please verify your credentials.');
-      }
-      if (code === 'auth/user-not-found') {
-        throw new Error('Account not found. Please register or submit an enrollment request.');
-      }
-      if (code === 'auth/too-many-requests') {
-        throw new Error('Too many failed attempts. Access temporarily locked for security. Please try again shortly.');
-      }
-      throw new Error(error.message || 'Login failed. Please check your credentials.');
+      throw new Error(formatAuthError(error));
     }
   };
 
@@ -210,7 +340,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error.code === 'auth/email-already-in-use') {
         throw new Error(`Student ID ${normalizedId} has already submitted an enrollment request or account exists. Contact Admin if you need assistance.`);
       }
-      throw new Error(error.message || 'Enrollment submission failed.');
+      throw new Error(formatAuthError(error));
     }
   };
 
@@ -229,7 +359,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error.code === 'auth/email-already-in-use') {
         throw new Error(`An account with email ${cleanEmail} is already registered or pending review.`);
       }
-      throw new Error(error.message || 'Teacher enrollment failed.');
+      throw new Error(formatAuthError(error));
     }
   };
 
@@ -250,7 +380,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error.code === 'auth/email-already-in-use') {
         throw new Error('This admin email is already in use. Please sign in instead.');
       }
-      throw new Error(error.message || 'Admin setup failed.');
+      throw new Error(formatAuthError(error));
     }
   };
 
@@ -277,6 +407,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         portalConfig,
         isSetupCompleted,
         login,
+        loginWithGoogle,
         registerStudent,
         registerTeacher,
         executeAdminSetup,

@@ -4,6 +4,7 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Download,
   GraduationCap,
   Layers,
   LogOut,
@@ -12,14 +13,21 @@ import {
   Users
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { PWAInstallButton } from './pwa/PWAInstallButton';
 
 interface NavbarProps {
   activeTab: 'dashboard' | 'attendance' | 'resources' | 'timetable' | 'roster';
   setActiveTab: (tab: 'dashboard' | 'attendance' | 'resources' | 'timetable' | 'roster') => void;
   onOpenAuth: () => void;
+  onOpenDownloadGuide: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenAuth }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  activeTab,
+  setActiveTab,
+  onOpenAuth,
+  onOpenDownloadGuide,
+}) => {
   const { userProfile, userRole, currentUser, logout, isSetupCompleted } = useAuth();
 
   return (
@@ -132,8 +140,11 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenA
             </button>
           </nav>
 
-          {/* User Status / Auth action */}
-          <div className="flex items-center gap-3">
+          {/* User Status, Download action, and Auth action */}
+          <div className="flex items-center gap-2.5">
+            {/* Install / Download App button */}
+            <PWAInstallButton onOpenGuide={onOpenDownloadGuide} variant="navbar" />
+
             {currentUser && userProfile ? (
               <div className="flex items-center gap-3">
                 <div className="text-right hidden sm:block">
@@ -219,6 +230,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenA
             }`}
           >
             Timetable
+          </button>
+          <button
+            onClick={onOpenDownloadGuide}
+            className="px-2 py-1 rounded font-medium text-emerald-400 flex items-center gap-1"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Install</span>
           </button>
         </div>
       </div>
