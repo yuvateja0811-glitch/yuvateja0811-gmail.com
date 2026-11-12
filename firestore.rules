@@ -1,0 +1,104 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPortalAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'yuvateja0811@gmail.com'
+      );
+    }
+
+    function isApprovedTeacher() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved';
+    }
+
+    function isApprovedStudent() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved';
+    }
+
+    function currentStudentId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId;
+    }
+
+    // Portal Configuration
+    match /system/{docId} {
+      allow read: if true;
+      allow write: if isPortalAdmin() || !exists(/databases/$(database)/documents/system/config);
+    }
+
+    // Admin Registry
+    match /admins/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isPortalAdmin());
+      allow create: if isPortalAdmin() || (!exists(/databases/$(database)/documents/system/config) && request.auth.uid == uid);
+      allow update, delete: if isPortalAdmin();
+    }
+
+    // User Profiles
+    match /users/{uid} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid || 
+        isPortalAdmin() || 
+        isApprovedTeacher()
+      );
+      allow create: if isPortalAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow update: if isPortalAdmin() || (
+        isSignedIn() && 
+        request.auth.uid == uid && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'updatedAt'])
+      );
+      allow delete: if isPortalAdmin();
+    }
+
+    // Enrollment Requests
+    match /enrollmentRequests/{requestId} {
+      allow read: if isSignedIn() && (
+        resource.data.uid == request.auth.uid || 
+        isPortalAdmin()
+      );
+      allow create: if isSignedIn() && 
+        request.resource.data.uid == request.auth.uid && 
+        request.resource.data.status == 'pending' &&
+        (request.resource.data.role in ['student', 'teacher']);
+      allow update: if isPortalAdmin();
+      allow delete: if isPortalAdmin();
+    }
+
+    // Official Student Roster (93 students of GVP CSE-2)
+    match /roster/{studentId} {
+      allow read: if true;
+      allow write: if isPortalAdmin();
+    }
+
+    // Attendance Records
+    match /attendance/{recordId} {
+      allow read: if isPortalAdmin() || isApprovedTeacher() || (
+        isApprovedStudent() && resource.data.studentId == currentStudentId()
+      );
+      allow create, update: if isPortalAdmin() || isApprovedTeacher();
+      allow delete: if isPortalAdmin();
+    }
+
+    // Study Materials and Resources
+    match /resources/{id} {
+      allow read: if true;
+      allow write: if isPortalAdmin() || isApprovedTeacher();
+    }
+  }
+}

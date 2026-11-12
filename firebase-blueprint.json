@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "PortalConfig": {
+      "title": "Portal Configuration",
+      "description": "System settings and one-time admin setup status",
+      "type": "object",
+      "properties": {
+        "adminSetupCompleted": { "type": "boolean", "description": "Whether first-time admin setup has been executed" },
+        "adminEmail": { "type": "string", "maxLength": 100, "description": "Email address of the portal admin" },
+        "adminUid": { "type": "string", "maxLength": 128, "description": "Firebase Auth UID of the portal admin" },
+        "department": { "type": "string", "maxLength": 50, "description": "College department name" },
+        "section": { "type": "string", "maxLength": 20, "description": "Academic section code" }
+      },
+      "required": ["adminSetupCompleted"]
+    },
+    "AdminRecord": {
+      "title": "Admin Registry",
+      "description": "Authorized portal administrators",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "description": "Auth UID" },
+        "email": { "type": "string", "maxLength": 100, "description": "Admin email" },
+        "fullName": { "type": "string", "maxLength": 100, "description": "Admin full name" },
+        "role": { "type": "string", "enum": ["admin"], "description": "Role string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "Approved portal user profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "description": "Firebase Auth UID" },
+        "email": { "type": "string", "maxLength": 100, "description": "User email address" },
+        "fullName": { "type": "string", "maxLength": 100, "description": "Full legal name" },
+        "role": { "type": "string", "enum": ["admin", "teacher", "student"], "description": "Portal role" },
+        "studentId": { "type": "string", "maxLength": 20, "description": "Official Student roll number" },
+        "department": { "type": "string", "maxLength": 50, "description": "Department name" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Approval state" }
+      },
+      "required": ["uid", "email", "fullName", "role", "status"]
+    },
+    "EnrollmentRequest": {
+      "title": "Enrollment Request",
+      "description": "Student and teacher registration requests awaiting admin review",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string", "maxLength": 128, "description": "Unique request identifier" },
+        "uid": { "type": "string", "maxLength": 128, "description": "Auth UID of the applicant" },
+        "email": { "type": "string", "maxLength": 100, "description": "Applicant contact email" },
+        "fullName": { "type": "string", "maxLength": 100, "description": "Applicant full name" },
+        "role": { "type": "string", "enum": ["teacher", "student"], "description": "Requested role" },
+        "studentId": { "type": "string", "maxLength": 20, "description": "Student roll number if student" },
+        "department": { "type": "string", "maxLength": 50, "description": "Academic department" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Review status" },
+        "adminNotes": { "type": "string", "maxLength": 300, "description": "Admin review comments" }
+      },
+      "required": ["requestId", "uid", "email", "fullName", "role", "status"]
+    },
+    "RosterStudent": {
+      "title": "Roster Student",
+      "description": "Official student roster entry for GVP CSE-2",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "maxLength": 20, "description": "Official Student roll number" },
+        "name": { "type": "string", "maxLength": 100, "description": "Student full name from roster" },
+        "section": { "type": "string", "maxLength": 20, "description": "Class section" },
+        "registered": { "type": "boolean", "description": "Whether an approved account is tied to this ID" },
+        "registeredUid": { "type": "string", "maxLength": 128, "description": "Registered UID" }
+      },
+      "required": ["studentId", "name", "section", "registered"]
+    },
+    "AttendanceRecord": {
+      "title": "Attendance Record",
+      "description": "Individual student attendance status for a specific subject and date",
+      "type": "object",
+      "properties": {
+        "recordId": { "type": "string", "maxLength": 128, "description": "Composite key: date_subject_studentId" },
+        "date": { "type": "string", "maxLength": 20, "description": "Date formatted YYYY-MM-DD" },
+        "subjectId": { "type": "string", "maxLength": 50, "description": "Subject identifier code" },
+        "subjectName": { "type": "string", "maxLength": 100, "description": "Readable subject title" },
+        "studentId": { "type": "string", "maxLength": 20, "description": "Student roll number" },
+        "studentName": { "type": "string", "maxLength": 100, "description": "Student full name" },
+        "status": { "type": "string", "enum": ["Present", "Absent"], "description": "Attendance status" },
+        "markedByUid": { "type": "string", "maxLength": 128, "description": "Teacher/Admin UID who marked record" },
+        "markedByName": { "type": "string", "maxLength": 100, "description": "Teacher/Admin name" }
+      },
+      "required": ["recordId", "date", "subjectId", "studentId", "status", "markedByUid"]
+    },
+    "ResourceItem": {
+      "title": "Resource Item",
+      "description": "Official study material and portal reference links",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100, "description": "Resource ID" },
+        "title": { "type": "string", "maxLength": 150, "description": "Material title" },
+        "subject": { "type": "string", "maxLength": 100, "description": "Subject category" },
+        "type": { "type": "string", "maxLength": 50, "description": "Type of resource: drive_folder, web_link, pdf" },
+        "url": { "type": "string", "maxLength": 500, "description": "Access URL or drive link" },
+        "description": { "type": "string", "maxLength": 500, "description": "Description or summary" }
+      },
+      "required": ["id", "title", "subject", "type"]
+    }
+  },
+  "firestore": {
+    "/system/config": {
+      "schema": "PortalConfig",
+      "description": "Global portal setup and master configuration"
+    },
+    "/admins/{uid}": {
+      "schema": "AdminRecord",
+      "description": "Authorized administrative accounts"
+    },
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles for authenticated and approved accounts"
+    },
+    "/enrollmentRequests/{requestId}": {
+      "schema": "EnrollmentRequest",
+      "description": "Submitted registration requests for admin review"
+    },
+    "/roster/{studentId}": {
+      "schema": "RosterStudent",
+      "description": "Official 93-student roster of GVP CSE-2"
+    },
+    "/attendance/{recordId}": {
+      "schema": "AttendanceRecord",
+      "description": "Attendance entries keyed by date_subject_studentId"
+    },
+    "/resources/{id}": {
+      "schema": "ResourceItem",
+      "description": "Course materials and resource links"
+    }
+  }
+}

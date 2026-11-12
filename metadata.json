@@ -1,0 +1,6 @@
+{
+  "name": "GVP CSE-2 Academic & Attendance Portal",
+  "description": "Official Academic & Real-Time Attendance Management Portal for GVP College of Engineering CSE-2 Section. Powered by Cloud Firestore and Firebase Auth.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
